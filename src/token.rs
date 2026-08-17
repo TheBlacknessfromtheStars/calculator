@@ -16,11 +16,12 @@ pub enum TokenType {
     Pow,
     Divisible, // **(乘方) //(整除)
     Indent,
-    Value,
+    Integer, 
+    Decimal,
     NewLine,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
@@ -84,8 +85,8 @@ fn transition(state: State, cls: Class) -> Option<State> {
         (S, Char('\n')) => Some(NewLine),
         (S, Char(c)) if c.is_whitespace() => Some(S),
 
-        (Minus, Digit) => Some(Int),
-        (Plus, Digit) => Some(Int),
+        // (Minus, Digit) => Some(Int),
+        // (Plus, Digit) => Some(Int),
         (Int, Digit) => Some(Int),
         (Int, Char('.')) => Some(Dot),
         (Dot, Digit) => Some(Frac),
@@ -106,7 +107,8 @@ fn is_accepting(state: State) -> bool {
 
 fn token_type_from_state(state: State) -> TokenType {
     match state {
-        State::Int | State::Frac => TokenType::Value,
+        State::Int => TokenType::Integer,
+        State::Frac => TokenType::Decimal,
         State::Id => TokenType::Indent,
         State::Plus => TokenType::Plus,
         Minus => TokenType::Minus,
