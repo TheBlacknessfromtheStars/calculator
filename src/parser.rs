@@ -3,7 +3,7 @@ use crate::error::{CalcError, CalcResult};
 use crate::token::{Token, TokenType};
 
 #[derive(Copy, Clone, PartialEq)]
-pub enum Value {
+pub enum Lit {
     Integer(i64),
     Decimal(f64)
 }
@@ -19,17 +19,17 @@ pub enum UnaryOp {
 }
 
 pub enum Expr {
-    Value(Value),
-    Variable(String),
+    Literal(Lit),
+    Var(String),
     Call(String, Vec<Expr>),
     Unary(UnaryOp, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
 
-pub enum Statement {
+pub enum Stmt {
     Expr(Expr),
     FuncDef(String, Vec<String>, Box<Expr>),
-    VariableDef(String, Box<Expr>)
+    VarDef(String, Box<Expr>)
 }
 
 pub struct Parse {
@@ -85,7 +85,7 @@ impl Parse {
         }
     }
 
-    pub fn parse_program(&self) -> CalcResult<Vec<Statement>> {
+    pub fn parse_program(&self) -> CalcResult<Vec<Stmt>> {
         let mut statements = Vec::new();
 
         while self.peek().is_some() {
@@ -95,7 +95,7 @@ impl Parse {
         Ok(statements)
     }
 
-    fn parse_statement(&self) -> CalcResult<Statement> {
+    fn parse_statement(&self) -> CalcResult<Stmt> {
         if let Some(fd) = self.try_parse_funcdef()? {
             return Ok(fd)
         }
@@ -104,29 +104,29 @@ impl Parse {
             return Ok(vd)
         }
 
-        Ok(Statement::Expr(self.parse_expression()?))
+        Ok(Stmt::Expr(self.parse_expression()?))
     }
 
-    fn try_parse_funcdef(&self) -> CalcResult<Option<Statement>> {
+    fn try_parse_funcdef(&self) -> CalcResult<Option<Stmt>> {
         let save = self.pos();
 
-        if !self.peek_two(TokenType::Indent, TokenType::ParenthesisOpen) {
+        if !self.peek_two(TokenType::Ident, TokenType::LParen) {
             self.pos.set(save);
             return Ok(None)
         }
 
-        let func_name = self.eat(TokenType::Indent).unwrap().lexeme.clone();
+        let func_name = self.eat(TokenType::Ident).unwrap().lexeme.clone();
         self.bump();
 
         let mut params = Vec::new();
 
         if let Some(t) = self.peek() {
-            if t.token_type == TokenType::ParenthesisClose { // 匹配到')',无参数函数
+            if t.token_type == TokenType::RParen { // 匹配到')',无参数函数
                 self.bump();
             } else {
                 loop {
                     let param_name = match self.peek() {
-                        Some(t) if t.token_type == TokenType::Indent => {
+                        Some(t) if t.token_type == TokenType::Ident => {
                             self.bump();
                             t.lexeme.clone()
                         }
@@ -141,7 +141,7 @@ impl Parse {
 
                     if let Some(t) =  self.peek() {
                         match t.token_type {
-                            TokenType::ParenthesisClose => {
+                            TokenType::RParen => {
                                 self.bump();
                                 break;
                             }
@@ -173,23 +173,23 @@ impl Parse {
 
         let boy = self.parse_expression()?;
 
-        Ok(Some(Statement::FuncDef(func_name, params, Box::new(boy))))
+        Ok(Some(Stmt::FuncDef(func_name, params, Box::new(boy))))
     }
 
-    fn try_parse_vardef(&self) -> CalcResult<Option<Statement>> {
+    fn try_parse_vardef(&self) -> CalcResult<Option<Stmt>> {
         let save = self.pos();
 
-        if !self.peek_two(TokenType::Indent, TokenType::Assign) {
+        if !self.peek_two(TokenType::Ident, TokenType::Assign) {
             self.pos.set(save);
             return Ok(None)
         }
 
-        let var_name = self.eat(TokenType::Indent).unwrap().lexeme.clone();
+        let var_name = self.eat(TokenType::Ident).unwrap().lexeme.clone();
         self.bump();
 
         let boy = self.parse_expression()?;
 
-        Ok(Some(Statement::VariableDef(var_name, Box::new(boy))))
+        Ok(Some(Stmt::VarDef(var_name, Box::new(boy))))
     }
 
     fn parse_expression(&self) -> CalcResult<Expr> {
