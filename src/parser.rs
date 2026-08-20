@@ -2,22 +2,23 @@ use std::cell::Cell;
 use crate::error::{CalcError, CalcResult};
 use crate::token::{Token, TokenType};
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Lit {
     Integer(i64),
     Decimal(f64)
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Pow, Mod
+    Add, Sub, Mul, Div, Pow, Mod, FloorDiv
 }
 
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum UnaryOp {
     Neg
 }
 
+#[derive(Debug)]
 pub enum Expr {
     Literal(Lit),
     Var(String),
@@ -26,10 +27,11 @@ pub enum Expr {
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
 }
 
+#[derive(Debug)]
 pub enum Stmt {
     Expr(Expr),
-    FuncDef(String, Vec<String>, Box<Expr>),
-    VarDef(String, Box<Expr>)
+    FuncDef(String, Vec<String>, Expr),
+    VarDef(String, Expr)
 }
 
 pub struct Parse {
@@ -90,6 +92,7 @@ impl Parse {
 
         while self.peek().is_some() {
             statements.push(self.parse_statement()?);
+            self.eat(TokenType::NewLine);
         }
 
         Ok(statements)
@@ -173,7 +176,7 @@ impl Parse {
 
         let boy = self.parse_expression()?;
 
-        Ok(Some(Stmt::FuncDef(func_name, params, Box::new(boy))))
+        Ok(Some(Stmt::FuncDef(func_name, params, boy)))
     }
 
     fn try_parse_vardef(&self) -> CalcResult<Option<Stmt>> {
@@ -189,7 +192,7 @@ impl Parse {
 
         let boy = self.parse_expression()?;
 
-        Ok(Some(Stmt::VarDef(var_name, Box::new(boy))))
+        Ok(Some(Stmt::VarDef(var_name, boy)))
     }
 
     fn parse_expression(&self) -> CalcResult<Expr> {
@@ -217,23 +220,101 @@ impl Parse {
             (TokenType::Minus, BinaryOp::Sub)
         ];
 
+        self.parse_binary(|| self.parse_mod(), &ops)
+    }
+
+    fn parse_mod(&self) -> CalcResult<Expr> {
+        let ops = [
+            (TokenType::Percent, BinaryOp::Mod)
+        ];
+
         self.parse_binary(|| self.parse_mul_div(), &ops)
     }
 
     fn parse_mul_div(&self) -> CalcResult<Expr> {
         let ops = [
-            (TokenType::Slash, BinaryOp::Mul),
-            (TokenType::Star, BinaryOp::Div)
+            (TokenType::Star, BinaryOp::Mul),
+            (TokenType::Slash, BinaryOp::Div),
+            (TokenType::DoubleSlash, BinaryOp::FloorDiv)
         ];
 
         self.parse_binary(|| self.parse_unary(), &ops)
     }
 
     fn parse_unary(&self) -> CalcResult<Expr> {
-        todo!()
+        if let Some(_) = self.eat(TokenType::Minus) {
+            let operand = self.parse_power()?;
+            return Ok(Expr::Unary(UnaryOp::Neg, Box::new(operand)));
+        }
+
+        self.parse_power()
+    }
+
+    fn parse_power(&self) -> CalcResult<Expr> {
+        let ops = [
+            (TokenType::DoubleStar, BinaryOp::Pow)
+        ];
+
+        self.parse_binary(|| self.parse_primary(), &ops)
     }
 
     fn parse_primary(&self) -> CalcResult<Expr> {
-        todo!()
+        if self.eat(TokenType::LParen).is_some() {
+            let boy = self.parse_expression()?;
+            self.expect(TokenType::RParen);
+            return Ok(boy)
+        }
+
+        match self.peek() {
+            Some(t) => {
+                match t.token_type {
+                    TokenType::Integer => {
+                        let i: i64 = t.lexeme.parse().map_err(|_| CalcError::Parse(
+                                String::from(format!("超出范围{}", t.lexeme))
+                        ))?;
+                        self.bump();
+                        return Ok(Expr::Literal(Lit::Integer(i)))
+                    }
+
+                    TokenType::Decimal => {
+                        let f: f64 = t.lexeme.parse().map_err(|_| CalcError::Parse(
+                                String::from(format!("超出范围{}", t.lexeme))
+                        ))?;
+                        self.bump();
+                        return Ok(Expr::Literal(Lit::Decimal(f)))
+                    }
+
+                    TokenType::Ident => {
+                        let name = t.lexeme.clone();
+                        
+                        self.bump();
+                        if self.eat(TokenType::LParen).is_some() {
+                            if self.eat(TokenType::RParen).is_some() {
+                                let mut args = Vec::new();
+                                loop {
+                                    let arg = self.parse_expression()?;
+                                    args.push(arg);
+                                    if self.eat(TokenType::Comma).is_none() {
+                                        break;
+                                    }
+                                }
+                                self.expect(TokenType::RParen)?;
+                                return Ok(Expr::Call(
+                                    name, 
+                                    args
+                                ))
+                            }
+                        }
+
+                        return Ok(Expr::Var(name))
+                    }
+
+                    _ => return Err(CalcError::Parse(format!("意外的token: {:?}", t)))
+                }
+            }
+
+            Some(t) => return Err(CalcError::Parse(String::from(format!("意外的token: {:?}", t)))),
+            None => Err(CalcError::Parse(String::from("意外的输入结束"))),
+        }
     }
 }
