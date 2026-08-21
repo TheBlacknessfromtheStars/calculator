@@ -8,11 +8,18 @@ mod parser;
 mod eval;
 
 fn main() {
-    let src = fs::read_to_string("/data/data/com.termux/files/home/calculator/test.ca").unwrap();
-
+    let src = fs::read_to_string("test.ca").unwrap();
     let tokens = Lexer::new(&src).tokenize().unwrap();
     let parse = Parse::new(tokens);
-    let ast = parse.parse_program().unwrap();
+    let ast = match parse.parse_program() {
+        Ok(ast) => ast,
+        Err(e) => {
+            println!("{}", e);
+            return;
+        }
+    };
+
+    println!("{:?}", ast);
 
     let mut eval = Eval::new(ast);
     eval.eval();
